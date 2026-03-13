@@ -1,0 +1,12 @@
+from pydantic import BaseModel, Field
+
+
+class ChatMessageRequest(BaseModel):
+    document_ids: list[int] = Field(..., min_length=1)
+    message: str = Field(..., min_length=1, max_length=2000)
+
+
+class ChatMessageResponse(BaseModel):
+    answer: str
+    document_ids: list[int]
+    document_names: list[str]

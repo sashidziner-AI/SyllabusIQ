@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+@variant hover (&:hover);
+
+/* ─── Theme Variables (base layer) ─── */
+@layer base {
+  :root.dark,
+  :root:not(.light) {
+    --bg-primary: #0a0f0a;
+    --bg-secondary: #0d1410;
+    --bg-card: #111a11;
+    --bg-input: #0a0f0a;
+    --border-color: rgba(20, 83, 45, 0.3);
+    --border-subtle: rgba(20, 83, 45, 0.2);
+    --text-primary: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --text-heading: #f1f5f9;
+    --accent: #22c55e;
+    --accent-hover: #16a34a;
+    --accent-soft: rgba(34, 197, 94, 0.1);
+    --accent-text: #4ade80;
+    --scrollbar-track: #111a11;
+    --scrollbar-thumb: rgba(34, 197, 94, 0.2);
+    --scrollbar-thumb-hover: rgba(34, 197, 94, 0.4);
+    --hover-overlay: rgba(255, 255, 255, 0.05);
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
+  }
+
+  :root.light {
+    --bg-primary: #f8faf8;
+    --bg-secondary: #ffffff;
+    --bg-card: #ffffff;
+    --bg-input: #f1f5f1;
+    --border-color: rgba(20, 83, 45, 0.15);
+    --border-subtle: rgba(20, 83, 45, 0.1);
+    --text-primary: #1e293b;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
+    --text-heading: #0f172a;
+    --accent: #16a34a;
+    --accent-hover: #15803d;
+    --accent-soft: rgba(22, 163, 74, 0.08);
+    --accent-text: #16a34a;
+    --scrollbar-track: #f1f5f1;
+    --scrollbar-thumb: rgba(22, 163, 74, 0.25);
+    --scrollbar-thumb-hover: rgba(22, 163, 74, 0.45);
+    --hover-overlay: rgba(0, 0, 0, 0.04);
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+  }
+
+  body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+  }
+}
+
+/* ─── Theme utility classes (utilities layer for proper specificity) ─── */
+@layer utilities {
+  .theme-bg-primary { background-color: var(--bg-primary) !important; }
+  .theme-bg-secondary { background-color: var(--bg-secondary) !important; }
+  .theme-bg-card { background-color: var(--bg-card) !important; }
+  .theme-bg-input { background-color: var(--bg-input) !important; }
+  .theme-border { border-color: var(--border-color) !important; }
+  .theme-border-subtle { border-color: var(--border-subtle) !important; }
+  .theme-text { color: var(--text-primary) !important; }
+  .theme-text-secondary { color: var(--text-secondary) !important; }
+  .theme-text-muted { color: var(--text-muted) !important; }
+  .theme-text-heading { color: var(--text-heading) !important; }
+  .theme-accent { color: var(--accent-text) !important; }
+  .theme-hover:hover { background-color: var(--hover-overlay) !important; }
+  .theme-shadow { box-shadow: var(--shadow-card) !important; }
+}
