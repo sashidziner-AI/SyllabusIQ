@@ -32,6 +32,14 @@ export const authService = {
     return data;
   },
 
+  changePassword: async (currentPassword: string, newPassword: string): Promise<{ message: string }> => {
+    const { data } = await api.post<{ message: string }>('/auth/change-password', {
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
+    return data;
+  },
+
   getGoogleAuthUrl: async (): Promise<string> => {
     const { data } = await api.get<{ url: string }>('/auth/google');
     return data.url;

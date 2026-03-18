@@ -12,7 +12,7 @@ from app.auth.dependencies import get_current_active_user
 from app.auth.oauth import get_google_tokens, get_google_user
 from app.models.user import User
 from app.models.refresh_token import RefreshToken
-from app.schemas.auth import Token, RegisterRequest, RefreshRequest, UserResponse, UserUpdate
+from app.schemas.auth import Token, RegisterRequest, RefreshRequest, UserResponse, UserUpdate, ChangePasswordRequest
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -123,6 +123,26 @@ async def update_me(
     db.commit()
     db.refresh(user)
     return UserResponse.model_validate(user)
+
+
+@router.post("/change-password", status_code=status.HTTP_200_OK)
+async def change_password(
+    req: ChangePasswordRequest,
+    user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    if not user.hashed_password or not verify_password(req.current_password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect"
+        )
+    if len(req.new_password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="New password must be at least 6 characters"
+        )
+    user.hashed_password = hash_password(req.new_password)
+    db.commit()
+    logger.info("Password changed for user: %s", user.email)
+    return {"message": "Password changed successfully"}
 
 
 @router.get("/google")

@@ -425,15 +425,26 @@ export function HistoryPage() {
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [viewEntry, setViewEntry] = useState<HistoryEntry | null>(null);
   const [deleteEntry, setDeleteEntry] = useState<HistoryEntry | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const perPage = 5;
 
   useEffect(() => {
     setEntries(historyService.getAll());
   }, []);
 
+  const totalPages = Math.ceil(entries.length / perPage);
+  const paginatedEntries = entries.slice((currentPage - 1) * perPage, currentPage * perPage);
+
   const handleDelete = (entry: HistoryEntry) => {
     historyService.delete(entry.id);
-    setEntries(historyService.getAll());
+    const updated = historyService.getAll();
+    setEntries(updated);
     setDeleteEntry(null);
+    // Go back a page if current page is now empty
+    const newTotalPages = Math.ceil(updated.length / perPage);
+    if (currentPage > newTotalPages && newTotalPages > 0) {
+      setCurrentPage(newTotalPages);
+    }
   };
 
   const cardClass = theme === 'dark'
@@ -485,7 +496,7 @@ export function HistoryPage() {
                   </tr>
                 </thead>
                 <tbody className={`divide-y ${divideClass}`}>
-                  {entries.map((entry, idx) => (
+                  {paginatedEntries.map((entry, idx) => (
                     <motion.tr
                       key={entry.id}
                       initial={{ opacity: 0, y: 8 }}
@@ -493,7 +504,7 @@ export function HistoryPage() {
                       transition={{ delay: idx * 0.03 }}
                       className="theme-hover transition-colors"
                     >
-                      <td className="px-5 py-4 theme-text-muted font-medium">{idx + 1}</td>
+                      <td className="px-5 py-4 theme-text-muted font-medium">{(currentPage - 1) * perPage + idx + 1}</td>
                       <td className="px-5 py-4">
                         <div>
                           <p className="font-medium theme-text-heading">{entry.documentName}</p>
@@ -560,6 +571,44 @@ export function HistoryPage() {
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-5 py-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
+                <p className="text-xs theme-text-muted">
+                  Showing {(currentPage - 1) * perPage + 1}–{Math.min(currentPage * perPage, entries.length)} of {entries.length} entries
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className={`p-2 rounded-lg border ${theme === 'dark' ? 'border-green-900/30' : 'border-gray-300'} theme-text-muted theme-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors`}
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                    <button
+                      key={page}
+                      onClick={() => setCurrentPage(page)}
+                      className={`w-9 h-9 rounded-lg text-sm font-medium transition-colors ${
+                        page === currentPage
+                          ? 'bg-green-500 text-white'
+                          : `border ${theme === 'dark' ? 'border-green-900/30' : 'border-gray-300'} theme-text-secondary theme-hover`
+                      }`}
+                    >
+                      {page}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className={`p-2 rounded-lg border ${theme === 'dark' ? 'border-green-900/30' : 'border-gray-300'} theme-text-muted theme-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors`}
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
+            )}
           </motion.div>
         )}
       </div>

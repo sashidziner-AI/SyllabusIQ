@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Lightbulb, FileText, Loader2, AlertCircle, Download,
   Search, ChevronDown, X, Check, Sparkles, ChevronLeft, ChevronRight,
-  Send, Bot, User, MessageSquare,
+  Send, Bot, User, MessageSquare, Mic, MicOff, Image,
 } from 'lucide-react';
 import { PageWrapper } from '../components/layout/PageWrapper';
 import { UploadDropzone } from '../components/documents/UploadDropzone';
@@ -177,6 +177,7 @@ interface ChatMessage {
   id: number;
   role: 'user' | 'assistant';
   content: string;
+  image?: string;
 }
 
 /* ─── Answer Badge ─── */
@@ -368,6 +369,64 @@ export function QAWorkspacePage() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const nextId = useRef(0);
 
+  /* Screenshot/image attachment state */
+  const [attachedImage, setAttachedImage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImageAttach = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setAttachedImage(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  /* Voice input state */
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+
+  const toggleVoiceInput = () => {
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setChatError('Voice input is not supported in this browser.');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.continuous = false;
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      const transcript = event.results[0][0].transcript;
+      setChatInput((prev) => (prev ? prev + ' ' + transcript : transcript));
+      setIsListening(false);
+      inputRef.current?.focus();
+    };
+
+    recognition.onerror = () => {
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsListening(true);
+  };
+
   /* Question Gen state */
   const [numQuestions, setNumQuestions] = useState(10);
   const [questions, setQuestions] = useState<GeneratedMCQ[]>([]);
@@ -411,12 +470,13 @@ export function QAWorkspacePage() {
   /* Chat handlers */
   const handleSend = async () => {
     const trimmed = chatInput.trim();
-    if (!trimmed || selectedDocIds.length === 0 || isChatLoading) return;
+    if ((!trimmed && !attachedImage) || selectedDocIds.length === 0 || isChatLoading) return;
 
     setChatError('');
-    const userMsg: ChatMessage = { id: nextId.current++, role: 'user', content: trimmed };
+    const userMsg: ChatMessage = { id: nextId.current++, role: 'user', content: trimmed || '(screenshot attached)', image: attachedImage || undefined };
     setMessages((prev) => [...prev, userMsg]);
     setChatInput('');
+    setAttachedImage(null);
     setIsChatLoading(true);
 
     try {
@@ -892,6 +952,13 @@ export function QAWorkspacePage() {
                               : `${botBubbleClass} rounded-bl-md border hover:shadow-md`
                           }`}
                         >
+                          {msg.image && (
+                            <img
+                              src={msg.image}
+                              alt="Attached screenshot"
+                              className="max-w-full max-h-48 rounded-lg mb-2 border border-white/20"
+                            />
+                          )}
                           {msg.content}
                         </div>
                         {msg.role === 'user' && (
@@ -928,7 +995,41 @@ export function QAWorkspacePage() {
 
                 {/* Chat Input */}
                 <div className="border-t p-4" style={{ borderColor: 'var(--border-color)' }}>
+                  {/* Image Preview */}
+                  <AnimatePresence>
+                    {attachedImage && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="mb-3 overflow-hidden"
+                      >
+                        <div className="relative inline-block">
+                          <img
+                            src={attachedImage}
+                            alt="Attached"
+                            className={`max-h-28 rounded-lg border ${theme === 'dark' ? 'border-green-900/30' : 'border-gray-300'}`}
+                          />
+                          <button
+                            onClick={() => setAttachedImage(null)}
+                            className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center hover:bg-red-600 transition-colors shadow-md"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
                   <div className="flex items-end gap-3">
+                    {/* Hidden file input */}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleImageAttach}
+                    />
                     <textarea
                       ref={inputRef}
                       value={chatInput}
@@ -954,8 +1055,40 @@ export function QAWorkspacePage() {
                     <motion.button
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isChatLoading || selectedDocIds.length === 0}
+                      className={`flex-shrink-0 w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+                        attachedImage
+                          ? 'bg-green-500/20 text-green-500 border border-green-500/30'
+                          : theme === 'dark'
+                            ? 'bg-[#0a0f0a] border border-gray-700 text-gray-400 hover:text-green-400 hover:border-green-500/30'
+                            : 'bg-gray-100 border border-gray-300 text-gray-500 hover:text-green-600 hover:border-green-500/30'
+                      }`}
+                      title="Attach screenshot"
+                    >
+                      <Image size={18} />
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={toggleVoiceInput}
+                      disabled={isChatLoading || selectedDocIds.length === 0}
+                      className={`flex-shrink-0 w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+                        isListening
+                          ? 'bg-red-500 text-white animate-pulse hover:bg-red-600'
+                          : theme === 'dark'
+                            ? 'bg-[#0a0f0a] border border-gray-700 text-gray-400 hover:text-green-400 hover:border-green-500/30'
+                            : 'bg-gray-100 border border-gray-300 text-gray-500 hover:text-green-600 hover:border-green-500/30'
+                      }`}
+                      title={isListening ? 'Stop listening' : 'Voice input'}
+                    >
+                      {isListening ? <MicOff size={18} /> : <Mic size={18} />}
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
                       onClick={handleSend}
-                      disabled={isChatLoading || !chatInput.trim() || selectedDocIds.length === 0}
+                      disabled={isChatLoading || (!chatInput.trim() && !attachedImage) || selectedDocIds.length === 0}
                       className="flex-shrink-0 w-11 h-11 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white flex items-center justify-center hover:shadow-lg hover:shadow-green-500/20 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isChatLoading ? (
