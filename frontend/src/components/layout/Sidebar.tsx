@@ -2,16 +2,16 @@ import { NavLink } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   LayoutDashboard,
+  FolderOpen,
   FileText,
   Settings,
-  Sparkles,
   History,
 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/workspace', icon: Sparkles, label: 'QA Workspace' },
+  { to: '/projects', icon: FolderOpen, label: 'Projects' },
   { to: '/history', icon: History, label: 'History' },
   { to: '/documents', icon: FileText, label: 'Documents' },
   { to: '/settings', icon: Settings, label: 'Settings' },

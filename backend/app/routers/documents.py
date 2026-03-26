@@ -3,7 +3,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -34,6 +34,7 @@ def _get_user_document(db: Session, doc_id: int, user: User) -> Document:
 @router.post("/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(
     file: UploadFile = File(...),
+    project_id: int | None = Query(None),
     user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ) -> DocumentResponse:
@@ -56,6 +57,7 @@ async def upload_document(
 
     doc = Document(
         user_id=user.id,
+        project_id=project_id,
         filename=unique_name,
         original_filename=file.filename or "unknown",
         file_type=file_type,
@@ -73,10 +75,13 @@ async def upload_document(
 async def list_documents(
     page: int = 1,
     per_page: int = 10,
+    project_id: int | None = Query(None),
     user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ) -> DocumentListResponse:
     query = db.query(Document).filter(Document.user_id == user.id)
+    if project_id is not None:
+        query = query.filter(Document.project_id == project_id)
     total = query.count()
     docs = query.order_by(Document.uploaded_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
     return DocumentListResponse(

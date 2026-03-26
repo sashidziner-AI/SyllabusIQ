@@ -2,6 +2,7 @@ import type { GeneratedMCQ } from './questionGenService';
 
 export interface HistoryEntry {
   id: string;
+  projectId?: number;
   documentName: string;
   documentNames: string[];
   questionCount: number;
@@ -25,14 +26,12 @@ function saveAll(entries: HistoryEntry[]): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
 }
 
-function generateDocLabel(docNames: string[]): string {
-  const entries = getAll();
-  // Use the first document name, strip extension
+function generateDocLabel(docNames: string[], projectId?: number): string {
+  const all = getAll().filter((e) => e.projectId === projectId);
   const baseName = docNames[0]?.replace(/\.[^/.]+$/, '') || 'Document';
 
-  // Find the highest existing number for this base name
   let maxNum = 0;
-  for (const entry of entries) {
+  for (const entry of all) {
     const match = entry.documentName.match(new RegExp(`^${escapeRegex(baseName)}_(\\d+)$`));
     if (match) {
       maxNum = Math.max(maxNum, parseInt(match[1], 10));
@@ -47,15 +46,20 @@ function escapeRegex(str: string): string {
 }
 
 export const historyService = {
-  getAll(): HistoryEntry[] {
-    return getAll().sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  getAll(projectId?: number): HistoryEntry[] {
+    const entries = getAll();
+    const filtered = projectId !== undefined
+      ? entries.filter((e) => e.projectId === projectId)
+      : entries;
+    return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   },
 
-  save(docNames: string[], questions: GeneratedMCQ[], hasNos: boolean): HistoryEntry {
+  save(docNames: string[], questions: GeneratedMCQ[], hasNos: boolean, projectId?: number): HistoryEntry {
     const entries = getAll();
     const entry: HistoryEntry = {
       id: crypto.randomUUID(),
-      documentName: generateDocLabel(docNames),
+      projectId,
+      documentName: generateDocLabel(docNames, projectId),
       documentNames: docNames,
       questionCount: questions.length,
       hasNos,

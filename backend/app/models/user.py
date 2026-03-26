@@ -40,3 +40,6 @@ class User(Base, TimestampMixin):
     export_jobs = relationship(
         "ExportJob", back_populates="user", cascade="all, delete-orphan"
     )
+    projects = relationship(
+        "Project", back_populates="user", cascade="all, delete-orphan"
+    )

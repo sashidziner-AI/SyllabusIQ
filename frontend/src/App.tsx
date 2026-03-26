@@ -19,6 +19,8 @@ import { QAChatPage } from './pages/QAChatPage';
 import { QuestionGenPage } from './pages/QuestionGenPage';
 import { QAWorkspacePage } from './pages/QAWorkspacePage';
 import { HistoryPage } from './pages/HistoryPage';
+import { ProjectsPage } from './pages/ProjectsPage';
+import { ProjectWorkspacePage } from './pages/ProjectWorkspacePage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -44,12 +46,14 @@ export default function App() {
             {/* Protected routes with layout */}
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
               <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/projects" element={<ProjectsPage />} />
+              <Route path="/projects/:projectId" element={<ProjectWorkspacePage />} />
               <Route path="/documents" element={<DocumentListPage />} />
               <Route path="/documents/:id" element={<DocumentDetailPage />} />
               <Route path="/generate/:documentId" element={<GenerationPage />} />
               <Route path="/questions" element={<QuestionBankPage />} />
               <Route path="/questions/:id" element={<QuestionEditPage />} />
-              <Route path="/workspace" element={<QAWorkspacePage />} />
+              <Route path="/workspace" element={<Navigate to="/projects" replace />} />
               <Route path="/history" element={<HistoryPage />} />
               <Route path="/chat" element={<QAChatPage />} />
               <Route path="/question-gen" element={<QuestionGenPage />} />

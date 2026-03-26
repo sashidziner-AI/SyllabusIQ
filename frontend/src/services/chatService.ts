@@ -14,8 +14,10 @@ export interface ChatResponse {
 }
 
 export const chatService = {
-  getDocuments: async (): Promise<ChatDocument[]> => {
-    const { data } = await api.get('/chat/documents');
+  getDocuments: async (projectId?: number): Promise<ChatDocument[]> => {
+    const params: Record<string, number> = {};
+    if (projectId !== undefined) params.project_id = projectId;
+    const { data } = await api.get('/chat/documents', { params });
     return data;
   },
 

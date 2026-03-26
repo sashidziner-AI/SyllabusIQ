@@ -21,6 +21,9 @@ class Document(Base):
     user_id = Column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    project_id = Column(
+        Integer, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     filename = Column(String(255), nullable=False)
     original_filename = Column(String(255), nullable=False)
     file_type = Column(String(10), nullable=False)
@@ -34,6 +37,7 @@ class Document(Base):
     processed_at = Column(DateTime(timezone=True), nullable=True)
 
     user = relationship("User", back_populates="documents")
+    project = relationship("Project", back_populates="documents")
     nos_units = relationship(
         "NOSUnit", back_populates="document", cascade="all, delete-orphan"
     )

@@ -9,19 +9,27 @@ interface DocumentListResponse {
 }
 
 export const documentService = {
-  upload: async (file: File): Promise<Document> => {
+  upload: async (file: File, onProgress?: (percent: number) => void, projectId?: number): Promise<Document> => {
     const form = new FormData();
     form.append('file', file);
+    const params: Record<string, number> = {};
+    if (projectId !== undefined) params.project_id = projectId;
     const { data } = await api.post<Document>('/documents/upload', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      params,
+      onUploadProgress: (e) => {
+        if (onProgress && e.total) {
+          onProgress(Math.round((e.loaded * 100) / e.total));
+        }
+      },
     });
     return data;
   },
 
-  getDocuments: async (page = 1, perPage = 10): Promise<DocumentListResponse> => {
-    const { data } = await api.get<DocumentListResponse>('/documents', {
-      params: { page, per_page: perPage },
-    });
+  getDocuments: async (page = 1, perPage = 10, projectId?: number): Promise<DocumentListResponse> => {
+    const params: Record<string, number> = { page, per_page: perPage };
+    if (projectId !== undefined) params.project_id = projectId;
+    const { data } = await api.get<DocumentListResponse>('/documents', { params });
     return data;
   },
 

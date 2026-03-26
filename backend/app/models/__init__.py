@@ -6,6 +6,7 @@ from app.models.criterion import PerformanceCriterion
 from app.models.generation_job import MCQGenerationJob, JobStatus
 from app.models.question import MCQuestion, QuestionTag, question_tag_mapping, DifficultyLevel
 from app.models.export_job import ExportJob, ExportStatus
+from app.models.project import Project
 
 __all__ = [
     "User",
@@ -23,4 +24,5 @@ __all__ = [
     "DifficultyLevel",
     "ExportJob",
     "ExportStatus",
+    "Project",
 ]
