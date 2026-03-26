@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -75,14 +75,18 @@ async def ask_question(
 
 @router.get("/documents")
 async def list_chat_documents(
+    project_id: int | None = Query(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
 ) -> list[dict]:
     """List user's documents available for QA chat (uploaded or analyzed)."""
-    documents = db.query(Document).filter(
+    query = db.query(Document).filter(
         Document.user_id == user.id,
         Document.status.in_([DocumentStatus.uploaded, DocumentStatus.analyzed]),
-    ).order_by(Document.uploaded_at.desc()).all()
+    )
+    if project_id is not None:
+        query = query.filter(Document.project_id == project_id)
+    documents = query.order_by(Document.uploaded_at.desc()).all()
 
     return [
         {

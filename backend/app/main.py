@@ -23,7 +23,7 @@ limiter = Limiter(key_func=get_remote_address)
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     os.makedirs(settings.EXPORT_DIR, exist_ok=True)
-    logger.info("Syllabus-IQ started — upload/export directories ready")
+    logger.info("Syllabus-IQ started — upload/export directories ready ")
     yield
     logger.info("Syllabus-IQ shutting down")
 
@@ -67,7 +67,7 @@ async def health() -> dict[str, str]:
     return {"status": "healthy", "app": settings.APP_NAME}
 
 
-from app.routers import auth, documents, generate, questions, exports, dashboard, chat, question_gen
+from app.routers import auth, documents, generate, questions, exports, dashboard, chat, question_gen, projects
 
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(documents.router, prefix="/api/v1")
@@ -77,3 +77,4 @@ app.include_router(exports.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")
 app.include_router(chat.router, prefix="/api/v1")
 app.include_router(question_gen.router, prefix="/api/v1")
+app.include_router(projects.router, prefix="/api/v1")

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { PageWrapper } from '../components/layout/PageWrapper';
 import { historyService, type HistoryEntry } from '../services/historyService';
+import { projectService, type ProjectData } from '../services/projectService';
 import type { GeneratedMCQ } from '../services/questionGenService';
 import { useTheme } from '../context/ThemeContext';
 
@@ -423,6 +424,7 @@ function DeleteConfirmModal({ name, onConfirm, onCancel }: { name: string; onCon
 export function HistoryPage() {
   const { theme } = useTheme();
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
+  const [projects, setProjects] = useState<ProjectData[]>([]);
   const [viewEntry, setViewEntry] = useState<HistoryEntry | null>(null);
   const [deleteEntry, setDeleteEntry] = useState<HistoryEntry | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -430,7 +432,10 @@ export function HistoryPage() {
 
   useEffect(() => {
     setEntries(historyService.getAll());
+    projectService.list().then(setProjects).catch(() => {});
   }, []);
+
+  const projectMap = new Map(projects.map((p) => [p.id, p.name]));
 
   const totalPages = Math.ceil(entries.length / perPage);
   const paginatedEntries = entries.slice((currentPage - 1) * perPage, currentPage * perPage);
@@ -490,6 +495,7 @@ export function HistoryPage() {
                   <tr className={`${headBg} theme-text-muted text-xs uppercase tracking-wider`}>
                     <th className="px-5 py-3.5 font-semibold w-16">S No</th>
                     <th className="px-5 py-3.5 font-semibold">Document Name</th>
+                    <th className="px-5 py-3.5 font-semibold w-40">Project</th>
                     <th className="px-5 py-3.5 font-semibold w-36">No of Questions</th>
                     <th className="px-5 py-3.5 font-semibold w-48">Date & Time</th>
                     <th className="px-5 py-3.5 font-semibold w-52 text-center">Action</th>
@@ -514,6 +520,15 @@ export function HistoryPage() {
                             </p>
                           )}
                         </div>
+                      </td>
+                      <td className="px-5 py-4">
+                        {entry.projectId ? (
+                          <span className="text-xs font-medium text-green-500 bg-green-500/10 px-2.5 py-1 rounded-lg">
+                            {projectMap.get(entry.projectId) || '—'}
+                          </span>
+                        ) : (
+                          <span className="text-xs theme-text-muted">—</span>
+                        )}
                       </td>
                       <td className="px-5 py-4">
                         <span className="inline-flex items-center gap-1.5 text-green-500 font-medium">

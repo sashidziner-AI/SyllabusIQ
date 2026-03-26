@@ -1,16 +1,20 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Lightbulb, FileText, Loader2, AlertCircle, Download,
+  FileText, Loader2, AlertCircle, Download, Upload, Type,
   Search, ChevronDown, X, Check, Sparkles, ChevronLeft, ChevronRight,
-  Send, Bot, User, MessageSquare, Mic, MicOff, Image,
+  Send, Bot, User, MessageSquare, Mic, MicOff, Image, Trash2,
+  FolderInput, ArrowLeft, History, Eye, LayoutGrid, Table as TableIcon,
 } from 'lucide-react';
 import { PageWrapper } from '../components/layout/PageWrapper';
 import { UploadDropzone } from '../components/documents/UploadDropzone';
 import { chatService, type ChatDocument, type ChatResponse } from '../services/chatService';
 import { questionGenService, type GeneratedMCQ } from '../services/questionGenService';
+import { documentService } from '../services/documentService';
+import type { Document as DocType } from '../types/document';
 import { exportMCQsToExcel } from '../utils/exportExcel';
-import { historyService } from '../services/historyService';
+import { historyService, type HistoryEntry } from '../services/historyService';
 import { useTheme } from '../context/ThemeContext';
 
 /* ─── Document Picker ─── */
@@ -70,7 +74,7 @@ function DocumentPicker({
         type="button"
         disabled={disabled}
         onClick={() => setOpen(!open)}
-        className={`flex items-center gap-2 border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-colors min-w-[280px] max-w-[400px] disabled:opacity-50 ${btnClass}`}
+        className={`flex items-center gap-2 border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-colors w-full disabled:opacity-50 ${btnClass}`}
       >
         <FileText size={16} className="text-green-500 flex-shrink-0" />
         <span className="flex-1 text-left truncate theme-text-secondary">
@@ -93,7 +97,7 @@ function DocumentPicker({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.15 }}
-            className={`absolute left-0 top-full mt-1 w-[340px] border rounded-xl shadow-xl z-50 overflow-hidden ${dropdownClass}`}
+            className={`absolute left-0 right-0 top-full mt-1 border rounded-xl shadow-xl z-50 overflow-hidden ${dropdownClass}`}
           >
             <div className="p-2 border-b theme-border-subtle" style={{ borderColor: 'var(--border-subtle)' }}>
               <div className="relative">
@@ -347,18 +351,263 @@ function QuestionTable({ questions, hasNos }: { questions: GeneratedMCQ[]; hasNo
   );
 }
 
+/* ─── CSV Download ─── */
+function downloadCSV(entry: HistoryEntry) {
+  const headers = [
+    'S No',
+    ...(entry.hasNos ? ['NOS Code', 'NOS Name', 'Performance Criteria'] : []),
+    'Question', 'Option A', 'Option B', 'Option C', 'Option D',
+    'Correct Answer', 'Explanation', 'Page Reference',
+  ];
+  const escapeCSV = (val: string) => {
+    if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+      return `"${val.replace(/"/g, '""')}"`;
+    }
+    return val;
+  };
+  const rows = entry.questions.map((q, idx) => {
+    const base = [
+      String(idx + 1),
+      ...(entry.hasNos ? [q.nos_code || '', q.nos_name || '', q.performance_criteria || ''] : []),
+      q.question, q.option_a, q.option_b, q.option_c, q.option_d,
+      q.correct_answer, q.explanation, q.page_reference || '',
+    ];
+    return base.map(escapeCSV).join(',');
+  });
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${entry.documentName}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ─── History View Modal ─── */
+function HistoryViewModal({ entry, onClose }: { entry: HistoryEntry; onClose: () => void }) {
+  const { theme } = useTheme();
+  const [currentPage, setCurrentPage] = useState(1);
+  const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
+  const perPage = 10;
+  const totalPages = Math.ceil(entry.questions.length / perPage);
+  const paginatedQuestions = entry.questions.slice((currentPage - 1) * perPage, currentPage * perPage);
+  const paginationBorder = theme === 'dark' ? 'border-green-900/30' : 'border-gray-300';
+
+  const toggleBtnClass = (active: boolean) =>
+    `flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+      active
+        ? 'bg-green-500 text-white'
+        : theme === 'dark'
+          ? 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
+          : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+    }`;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        onClick={(e) => e.stopPropagation()}
+        className={`relative w-full max-w-5xl max-h-[90vh] flex flex-col rounded-2xl border shadow-2xl ${
+          theme === 'dark' ? 'bg-[#0d1410] border-green-900/30' : 'bg-gray-50 border-gray-200'
+        }`}
+      >
+        <div className="flex items-center justify-between p-5 border-b" style={{ borderColor: 'var(--border-color)' }}>
+          <div>
+            <h2 className="text-lg font-bold theme-text-heading">{entry.documentName}</h2>
+            <p className="text-xs theme-text-muted mt-0.5">
+              {entry.questionCount} MCQs · Generated {new Date(entry.createdAt).toLocaleString()}
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className={`flex items-center gap-1 p-1 rounded-xl border ${
+              theme === 'dark' ? 'border-green-900/30 bg-[#0a0f0a]' : 'border-gray-200 bg-gray-100'
+            }`}>
+              <button onClick={() => setViewMode('card')} className={toggleBtnClass(viewMode === 'card')} title="Card View">
+                <LayoutGrid size={14} /> Card
+              </button>
+              <button onClick={() => setViewMode('table')} className={toggleBtnClass(viewMode === 'table')} title="Table View">
+                <TableIcon size={14} /> Table
+              </button>
+            </div>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-lg flex items-center justify-center theme-text-muted hover:theme-text-secondary theme-hover transition-colors"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5">
+          {viewMode === 'card' ? (
+            <div className="space-y-4">
+              {paginatedQuestions.map((q, idx) => (
+                <QuestionCard key={idx} q={q} idx={(currentPage - 1) * perPage + idx} hasNos={entry.hasNos} />
+              ))}
+            </div>
+          ) : (
+            <QuestionTable questions={paginatedQuestions} hasNos={entry.hasNos} />
+          )}
+        </div>
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-2 p-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className={`p-2 rounded-lg border ${paginationBorder} theme-text-muted theme-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors`}
+            >
+              <ChevronLeft size={16} />
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+              <button
+                key={page}
+                onClick={() => setCurrentPage(page)}
+                className={`w-9 h-9 rounded-lg text-sm font-medium transition-colors ${
+                  page === currentPage
+                    ? 'bg-green-500 text-white'
+                    : `border ${paginationBorder} theme-text-secondary theme-hover`
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className={`p-2 rounded-lg border ${paginationBorder} theme-text-muted theme-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors`}
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        )}
+      </motion.div>
+    </motion.div>
+  );
+}
+
 /* ─── Tab Type ─── */
-type WorkspaceTab = 'chat' | 'generate';
+type WorkspaceTab = 'inputSource' | 'chat';
+type InputSourceSubTab = 'uploadFiles' | 'plainText';
 
 /* ─── Main Page ─── */
-export function QAWorkspacePage() {
+export function QAWorkspacePage({ projectId, projectName }: { projectId?: number; projectName?: string }) {
   const { theme } = useTheme();
+  const navigate = useNavigate();
 
   /* Shared state */
   const [documents, setDocuments] = useState<ChatDocument[]>([]);
   const [selectedDocIds, setSelectedDocIds] = useState<number[]>([]);
   const [isFetchingDocs, setIsFetchingDocs] = useState(true);
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>('generate');
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>('inputSource');
+  const [inputSourceSubTab, setInputSourceSubTab] = useState<InputSourceSubTab>('uploadFiles');
+  const [plainText, setPlainText] = useState('');
+
+  /* Documents tab state */
+  const [fullDocs, setFullDocs] = useState<DocType[]>([]);
+  const [isLoadingFullDocs, setIsLoadingFullDocs] = useState(true);
+  const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadFileName, setUploadFileName] = useState('');
+  const [isDeletingDoc, setIsDeletingDoc] = useState<number | null>(null);
+  const [showDropzone, setShowDropzone] = useState(false);
+
+  /* History state */
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
+  const [viewHistoryEntry, setViewHistoryEntry] = useState<HistoryEntry | null>(null);
+
+  const refreshHistory = () => setHistoryEntries(historyService.getAll(projectId));
+
+  useEffect(() => {
+    refreshHistory();
+  }, []);
+
+  const fetchFullDocs = async (silent = false) => {
+    if (!silent) setIsLoadingFullDocs(true);
+    try {
+      const res = await documentService.getDocuments(1, 100, projectId);
+      setFullDocs(res.documents);
+    } catch {
+      // handled silently
+    } finally {
+      setIsLoadingFullDocs(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchFullDocs();
+  }, [projectId]);
+
+  const handleUploadWithProgress = async (file: File) => {
+    setIsUploadingDoc(true);
+    setUploadProgress(0);
+    setUploadFileName(file.name);
+    try {
+      await documentService.upload(file, (percent) => setUploadProgress(Math.min(percent, 90)), projectId);
+      // Simulate processing: animate from 90% to 100% over 5 seconds
+      setUploadProgress(90);
+      const start = Date.now();
+      const duration = 5000;
+      await new Promise<void>((resolve) => {
+        const tick = () => {
+          const elapsed = Date.now() - start;
+          if (elapsed >= duration) {
+            setUploadProgress(100);
+            resolve();
+            return;
+          }
+          setUploadProgress(90 + Math.round((elapsed / duration) * 10));
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+    } finally {
+      setIsUploadingDoc(false);
+      setUploadProgress(0);
+      setUploadFileName('');
+      setShowDropzone(false);
+      await fetchFullDocs(true);
+      await fetchChatDocs();
+    }
+  };
+
+  const handleDeleteDoc = async (id: number) => {
+    setIsDeletingDoc(id);
+    try {
+      await documentService.deleteDocument(id);
+      setFullDocs((prev) => prev.filter((d) => d.id !== id));
+      setSelectedDocIds((prev) => prev.filter((did) => did !== id));
+      setDocuments((prev) => prev.filter((d) => d.id !== id));
+    } catch {
+      // handled silently
+    } finally {
+      setIsDeletingDoc(null);
+    }
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
+    uploaded: { label: 'READY', color: 'text-green-500', bg: 'bg-green-500/10' },
+    processing: { label: 'PROCESSING', color: 'text-yellow-500', bg: 'bg-yellow-500/10' },
+    analyzed: { label: 'ANALYZED', color: 'text-blue-500', bg: 'bg-blue-500/10' },
+    failed: { label: 'FAILED', color: 'text-red-500', bg: 'bg-red-500/10' },
+  };
 
   /* Chat state */
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -438,27 +687,24 @@ export function QAWorkspacePage() {
   const [currentPage, setCurrentPage] = useState(1);
   const perPage = 10;
 
-  /* Fetch documents once */
+  /* Fetch documents (scoped to project if applicable) */
+  const fetchChatDocs = async () => {
+    setIsFetchingDocs(true);
+    try {
+      const docs = await chatService.getDocuments(projectId);
+      setDocuments(docs);
+      if (docs.length > 0) setSelectedDocIds([docs[0].id]);
+    } catch {
+      setChatError('Failed to load documents');
+      setGenError('Failed to load documents');
+    } finally {
+      setIsFetchingDocs(false);
+    }
+  };
+
   useEffect(() => {
-    chatService
-      .getDocuments()
-      .then((docs) => {
-        setDocuments(docs);
-        if (docs.length > 0) setSelectedDocIds([docs[0].id]);
-      })
-      .catch(() => {
-        setChatError('Failed to load documents');
-        setGenError('Failed to load documents');
-      })
-      .finally(() => setIsFetchingDocs(false));
-  }, []);
-
-  /* Document search */
-  const [docSearch, setDocSearch] = useState('');
-
-  const filteredDocuments = documents.filter((d) =>
-    d.filename.toLowerCase().includes(docSearch.toLowerCase()),
-  );
+    fetchChatDocs();
+  }, [projectId]);
 
   /* Auto-scroll chat */
   useEffect(() => {
@@ -499,9 +745,15 @@ export function QAWorkspacePage() {
     }
   };
 
+  /* Ready document IDs from the upload list (uploaded or analyzed status) */
+  const readyDocIds = fullDocs
+    .filter((d) => d.status === 'uploaded' || d.status === 'analyzed')
+    .map((d) => d.id);
+
   /* Question Gen handlers */
   const handleGenerate = async () => {
-    if (selectedDocIds.length === 0 || isGenLoading) return;
+    const docIds = readyDocIds.length > 0 ? readyDocIds : selectedDocIds;
+    if (docIds.length === 0 || isGenLoading) return;
     setGenError('');
     setQuestions([]);
     setHasNos(false);
@@ -509,11 +761,12 @@ export function QAWorkspacePage() {
     setCurrentPage(1);
 
     try {
-      const res = await questionGenService.generate(selectedDocIds, numQuestions);
+      const res = await questionGenService.generate(docIds, numQuestions);
       setQuestions(res.questions);
       setHasNos(res.has_nos);
       setDocNames(res.document_names);
-      historyService.save(res.document_names, res.questions, res.has_nos);
+      historyService.save(res.document_names, res.questions, res.has_nos, projectId);
+      refreshHistory();
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { detail?: string } } };
       setGenError(axiosErr.response?.data?.detail || 'Failed to generate questions. Please try again.');
@@ -586,136 +839,34 @@ export function QAWorkspacePage() {
     <PageWrapper>
       <div className="space-y-4">
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold theme-text-heading">QA Workspace</h1>
-          <p className="text-sm theme-text-muted">
-            Upload documents, generate MCQs, and ask questions — all in one place
-          </p>
+        <div className="flex items-center gap-3">
+          {projectName && (
+            <button
+              onClick={() => navigate('/projects')}
+              className="p-1.5 rounded-lg theme-hover theme-text-muted hover:theme-text-secondary transition-colors"
+              title="Back to Projects"
+            >
+              <ArrowLeft size={20} />
+            </button>
+          )}
+          <div>
+            <h1 className="text-2xl font-bold theme-text-heading">
+              {projectName ? `${projectName} — Workspace` : 'QA Workspace'}
+            </h1>
+            <p className="text-sm theme-text-muted">
+              Upload documents, generate MCQs, and ask questions — all in one place
+            </p>
+          </div>
         </div>
 
-        {/* Split Screen */}
-        <div className="flex gap-5" style={{ height: 'calc(100vh - 9rem)' }}>
-
-          {/* ═══ Left Panel: Upload & Documents ═══ */}
-          <div className={`w-80 flex-shrink-0 flex flex-col gap-4 ${cardClass} rounded-2xl border shadow-lg p-4 overflow-hidden`}>
-            {/* Upload */}
-            <div>
-              <label className="block text-xs font-medium theme-text-secondary mb-1">Upload Document</label>
-              <UploadDropzone />
-            </div>
-
-            {/* Select All / Clear + Search Bar */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-medium theme-text-secondary">
-                  Documents ({documents.length})
-                  {selectedDocIds.length > 0 && (
-                    <span className="ml-1 text-green-500">· {selectedDocIds.length} selected</span>
-                  )}
-                </label>
-                {documents.length > 0 && (
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleDocChange(documents.map((d) => d.id))}
-                      className="text-xs text-green-500 hover:text-green-400 font-medium"
-                    >
-                      Select all
-                    </button>
-                    <span className="text-xs theme-text-muted">|</span>
-                    <button
-                      onClick={() => handleDocChange([])}
-                      className="text-xs theme-text-muted hover:theme-text-secondary font-medium"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                )}
-              </div>
-              <div className="relative">
-                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 theme-text-muted" />
-                <input
-                  type="text"
-                  value={docSearch}
-                  onChange={(e) => setDocSearch(e.target.value)}
-                  placeholder="Search documents..."
-                  className={`w-full pl-8 pr-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none hover:border-green-500/30 transition-colors ${inputClass}`}
-                />
-                {docSearch && (
-                  <button
-                    onClick={() => setDocSearch('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 theme-text-muted hover:theme-text-secondary"
-                  >
-                    <X size={14} />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Document List */}
-            <div className="flex-1 overflow-y-auto -mx-1 px-1">
-              {isFetchingDocs ? (
-                <div className="flex items-center gap-2 theme-text-muted text-sm py-4 justify-center">
-                  <Loader2 size={14} className="animate-spin" />
-                  Loading...
-                </div>
-              ) : filteredDocuments.length === 0 ? (
-                <p className="text-sm theme-text-muted py-4 text-center">
-                  {documents.length === 0 ? 'No documents uploaded yet' : 'No documents match your search'}
-                </p>
-              ) : (
-                <div className="space-y-1">
-                  {filteredDocuments.map((doc) => {
-                    const isSelected = selectedDocIds.includes(doc.id);
-                    return (
-                      <button
-                        key={doc.id}
-                        onClick={() => {
-                          handleDocChange(
-                            isSelected
-                              ? selectedDocIds.filter((id) => id !== doc.id)
-                              : [...selectedDocIds, doc.id]
-                          );
-                        }}
-                        className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-left transition-colors ${
-                          isSelected
-                            ? 'bg-green-500/10 text-green-500'
-                            : 'theme-text-secondary theme-hover'
-                        }`}
-                      >
-                        <div
-                          className={`w-3.5 h-3.5 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
-                            isSelected
-                              ? 'bg-green-500 border-green-500'
-                              : theme === 'dark' ? 'border-gray-700' : 'border-gray-400'
-                          }`}
-                        >
-                          {isSelected && <Check size={8} className="text-white" />}
-                        </div>
-                        <FileText size={14} className={isSelected ? 'text-green-500' : 'theme-text-muted'} />
-                        <div className="flex-1 min-w-0">
-                          <p className="truncate text-xs font-medium">{doc.filename}</p>
-                          <p className="text-[10px] theme-text-muted">
-                            {doc.file_type.toUpperCase()}
-                            {doc.uploaded_at && ` · ${new Date(doc.uploaded_at).toLocaleDateString()}`}
-                          </p>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-          </div>
-
-          {/* ═══ Right Panel: Generate MCQs & QA Chat ═══ */}
-          <div className="flex-1 flex flex-col min-w-0">
+        {/* Full Width Content */}
+        <div className="flex flex-col" style={{ height: 'calc(100vh - 9rem)' }}>
             {/* Tab Switcher */}
             <div className="flex items-center gap-2 mb-4">
-              <button onClick={() => setActiveTab('generate')} className={tabClass(activeTab === 'generate')}>
+              <button onClick={() => setActiveTab('inputSource')} className={tabClass(activeTab === 'inputSource')}>
                 <span className="flex items-center gap-2">
-                  <Sparkles size={16} />
-                  Generate MCQs
+                  <FolderInput size={16} />
+                  Input Source
                 </span>
               </button>
               <button onClick={() => setActiveTab('chat')} className={tabClass(activeTab === 'chat')}>
@@ -726,71 +877,302 @@ export function QAWorkspacePage() {
               </button>
             </div>
 
-            {/* ─── Generate MCQs Tab ─── */}
-            {activeTab === 'generate' && (
-              <div className="flex-1 overflow-y-auto space-y-5">
-                {/* Controls */}
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className={`${cardClass} rounded-2xl border shadow-lg p-5`}
-                >
-                  <div className="flex items-end justify-between flex-wrap gap-4">
-                    <div>
-                      <label className="block text-xs font-medium theme-text-secondary mb-1">Number of MCQs</label>
-                      <input
-                        type="number"
-                        min={1}
-                        max={50}
-                        value={numQuestions}
-                        onChange={(e) => setNumQuestions(Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
-                        className={`w-24 border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none hover:border-green-500/50 transition-colors ${inputClass}`}
-                      />
-                    </div>
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={handleGenerate}
-                      disabled={isGenLoading || selectedDocIds.length === 0}
-                      className="flex items-center gap-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-2.5 rounded-xl text-sm font-medium hover:shadow-lg hover:from-green-600 hover:to-emerald-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isGenLoading ? (
-                        <>
-                          <Loader2 size={16} className="animate-spin" />
-                          Generating MCQs...
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles size={16} />
-                          Generate MCQs
-                        </>
-                      )}
-                    </motion.button>
-                  </div>
+            {/* ─── Input Source Tab ─── */}
+            {activeTab === 'inputSource' && (
+              <div className="flex-1 flex flex-col overflow-y-auto space-y-5">
+                {/* Subtab Switcher */}
+                <div className={`flex ${toggleBg} rounded-lg p-0.5 w-fit mx-auto`}>
+                  <button
+                    onClick={() => setInputSourceSubTab('uploadFiles')}
+                    className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                      inputSourceSubTab === 'uploadFiles' ? toggleActive : 'theme-text-muted hover:theme-text-secondary'
+                    }`}
+                  >
+                    <Upload size={14} />
+                    Upload Files
+                  </button>
+                  <button
+                    onClick={() => setInputSourceSubTab('plainText')}
+                    className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                      inputSourceSubTab === 'plainText' ? toggleActive : 'theme-text-muted hover:theme-text-secondary'
+                    }`}
+                  >
+                    <Type size={14} />
+                    Plain Text
+                  </button>
+                </div>
 
-                  {isGenLoading && (
-                    <div className="mt-4 p-4 bg-green-500/10 rounded-xl">
-                      <div className="flex items-center gap-3">
-                        <Loader2 size={18} className="animate-spin text-green-500" />
-                        <div>
-                          <p className="text-sm font-medium text-green-500">Analyzing document and generating questions...</p>
-                          <p className="text-xs text-green-600 mt-0.5">This may take a minute depending on document size</p>
+                {/* Upload Files Subtab */}
+                {inputSourceSubTab === 'uploadFiles' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`${cardClass} rounded-2xl border shadow-lg p-8 flex-1 flex flex-col`}
+                  >
+                    {(fullDocs.length === 0 || showDropzone) && (
+                      <div className="flex flex-col items-center">
+                        <label
+                          onDragOver={(e) => { e.preventDefault(); }}
+                          onDragLeave={(e) => { e.preventDefault(); }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            const file = e.dataTransfer.files[0];
+                            if (file) handleUploadWithProgress(file);
+                          }}
+                          className={`w-full cursor-pointer rounded-2xl border-2 border-dashed p-12 text-center transition-colors ${
+                            theme === 'dark'
+                              ? 'border-green-900/40 hover:border-green-500/60 hover:bg-green-500/5'
+                              : 'border-gray-300 hover:border-green-500/50 hover:bg-green-50'
+                          }`}
+                        >
+                          <input
+                            type="file"
+                            accept=".pdf,.docx,.xlsx,.pptx,.txt,.csv,.md"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) handleUploadWithProgress(file);
+                              e.target.value = '';
+                            }}
+                          />
+                          <div className="flex flex-col items-center gap-4">
+                            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center ${
+                              theme === 'dark' ? 'bg-green-500/10' : 'bg-green-50'
+                            }`}>
+                              {isUploadingDoc ? (
+                                <Loader2 size={32} className="text-green-500 animate-spin" />
+                              ) : (
+                                <Upload size={32} className="text-green-500" />
+                              )}
+                            </div>
+                            <div>
+                              <p className="text-lg font-semibold theme-text-heading mb-1">
+                                {isUploadingDoc ? 'Uploading...' : 'Drag & drop files here or click to browse'}
+                              </p>
+                              <p className="text-sm theme-text-muted">
+                                Upload your documents to analyze and generate MCQs
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+                              {['PDF', 'DOCX', 'XLSX', 'PPTX', 'TXT', 'CSV', 'MD'].map((fmt) => (
+                                <span
+                                  key={fmt}
+                                  className={`text-xs font-medium px-2.5 py-1 rounded-lg ${
+                                    theme === 'dark'
+                                      ? 'bg-white/5 text-gray-400 border border-white/10'
+                                      : 'bg-gray-100 text-gray-500 border border-gray-200'
+                                  }`}
+                                >
+                                  .{fmt.toLowerCase()}
+                                </span>
+                              ))}
+                            </div>
+                            <p className="text-xs theme-text-muted mt-1">Maximum file size: 20MB</p>
+                          </div>
+                        </label>
+                      </div>
+                    )}
+
+                    {/* Uploaded Documents List */}
+                    {isLoadingFullDocs ? (
+                      <div className="flex items-center justify-center py-6">
+                        <Loader2 size={20} className="animate-spin text-green-500" />
+                        <span className="ml-2 text-sm theme-text-muted">Loading documents...</span>
+                      </div>
+                    ) : fullDocs.length > 0 && (
+                      <div className="mt-6 space-y-2">
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-xs font-medium theme-text-muted uppercase tracking-wider">
+                            Uploaded Documents ({fullDocs.length})
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <motion.button
+                              whileHover={{ scale: 1.02 }}
+                              whileTap={{ scale: 0.98 }}
+                              onClick={() => { refreshHistory(); setShowHistory(true); }}
+                              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors text-amber-500 bg-amber-500/10 hover:bg-amber-500/20"
+                            >
+                              <History size={13} />
+                              History
+                              {historyEntries.length > 0 && (
+                                <span className="ml-0.5 w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center">
+                                  {historyEntries.length}
+                                </span>
+                              )}
+                            </motion.button>
+                            <motion.button
+                              whileHover={{ scale: 1.02 }}
+                              whileTap={{ scale: 0.98 }}
+                              onClick={() => setShowDropzone(!showDropzone)}
+                              className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
+                                showDropzone
+                                  ? 'bg-green-500 text-white'
+                                  : 'text-green-500 bg-green-500/10 hover:bg-green-500/20'
+                              }`}
+                            >
+                              <Upload size={13} />
+                              {showDropzone ? 'Hide Upload' : 'Upload Document'}
+                            </motion.button>
+                          </div>
+                        </div>
+                        {fullDocs.map((doc) => {
+                          const status = statusConfig[doc.status] || statusConfig.uploaded;
+                          const isProcessing = doc.status === 'processing';
+                          const isDeleting = isDeletingDoc === doc.id;
+                          return (
+                            <div
+                              key={doc.id}
+                              className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors ${
+                                theme === 'dark'
+                                  ? 'bg-[#0a0f0a] border-green-900/20 hover:border-green-900/40'
+                                  : 'bg-gray-50 border-gray-200 hover:border-gray-300'
+                              }`}
+                            >
+                              <div className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${
+                                theme === 'dark' ? 'bg-green-500/10' : 'bg-green-50'
+                              }`}>
+                                <FileText size={18} className="text-green-500" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <p className="text-sm font-medium theme-text-heading truncate">
+                                    {doc.original_filename}
+                                  </p>
+                                  <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded ${status.bg} ${status.color}`}>
+                                    {status.label}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className="text-xs theme-text-muted">
+                                    {formatFileSize(doc.file_size)}
+                                  </span>
+                                  <span className="text-xs theme-text-muted">·</span>
+                                  <span className="text-xs theme-text-muted">
+                                    {doc.file_type.toUpperCase()}
+                                  </span>
+                                  <span className="text-xs theme-text-muted">·</span>
+                                  <span className="text-xs theme-text-muted">
+                                    {new Date(doc.uploaded_at).toLocaleDateString()}
+                                  </span>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => handleDeleteDoc(doc.id)}
+                                disabled={isDeleting}
+                                className="flex-shrink-0 p-1.5 rounded-lg theme-text-muted hover:text-red-500 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                                title="Delete document"
+                              >
+                                {isDeleting ? (
+                                  <Loader2 size={14} className="animate-spin" />
+                                ) : (
+                                  <Trash2 size={14} />
+                                )}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Upload progress overlay — only while uploading */}
+                    {isUploadingDoc && uploadFileName && (
+                      <div className={`mt-4 px-4 py-3 rounded-xl border ${
+                        theme === 'dark'
+                          ? 'bg-[#0a0f0a] border-green-900/20'
+                          : 'bg-gray-50 border-gray-200'
+                      }`}>
+                        <div className="flex items-center gap-3">
+                          <Loader2 size={16} className="animate-spin text-green-500 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium theme-text-heading truncate">{uploadFileName}</p>
+                            <div className={`mt-1.5 w-full h-1.5 rounded-full overflow-hidden ${
+                              theme === 'dark' ? 'bg-gray-800' : 'bg-gray-200'
+                            }`}>
+                              <div
+                                className="h-full rounded-full bg-green-500 transition-all duration-300"
+                                style={{ width: `${uploadProgress}%` }}
+                              />
+                            </div>
+                          </div>
+                          <span className="text-xs font-medium flex-shrink-0 text-green-500">
+                            {uploadProgress}%
+                          </span>
                         </div>
                       </div>
-                    </div>
-                  )}
-                </motion.div>
+                    )}
 
-                {/* Error */}
-                {genError && (
+                    {/* Generate MCQs — shown when documents are ready */}
+                    {readyDocIds.length > 0 && (
+                      <div className={`mt-6 pt-5 border-t ${theme === 'dark' ? 'border-green-900/20' : 'border-gray-200'}`}>
+                        <div className="flex items-end justify-between flex-wrap gap-4">
+                          <div className="flex items-center gap-3">
+                            <Sparkles size={18} className="text-green-500" />
+                            <div>
+                              <p className="text-sm font-semibold theme-text-heading">Generate MCQs</p>
+                              <p className="text-xs theme-text-muted">{readyDocIds.length} document{readyDocIds.length > 1 ? 's' : ''} ready</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div>
+                              <label className="block text-[10px] font-medium theme-text-muted uppercase tracking-wider mb-1">MCQs</label>
+                              <input
+                                type="number"
+                                min={1}
+                                max={50}
+                                value={numQuestions}
+                                onChange={(e) => setNumQuestions(Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
+                                className={`w-20 border rounded-lg px-2.5 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none hover:border-green-500/50 transition-colors ${inputClass}`}
+                              />
+                            </div>
+                            <motion.button
+                              whileHover={{ scale: 1.02 }}
+                              whileTap={{ scale: 0.98 }}
+                              onClick={handleGenerate}
+                              disabled={isGenLoading || readyDocIds.length === 0}
+                              className="flex items-center gap-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium hover:shadow-lg hover:from-green-600 hover:to-emerald-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {isGenLoading ? (
+                                <>
+                                  <Loader2 size={16} className="animate-spin" />
+                                  Generating...
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles size={16} />
+                                  Generate MCQs
+                                </>
+                              )}
+                            </motion.button>
+                          </div>
+                        </div>
+
+                        {isGenLoading && (
+                          <div className="mt-4 p-4 bg-green-500/10 rounded-xl">
+                            <div className="flex items-center gap-3">
+                              <Loader2 size={18} className="animate-spin text-green-500" />
+                              <div>
+                                <p className="text-sm font-medium text-green-500">Analyzing document and generating questions...</p>
+                                <p className="text-xs text-green-600 mt-0.5">This may take a minute depending on document size</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                  </motion.div>
+                )}
+
+                {/* Generate MCQs Error */}
+                {genError && inputSourceSubTab === 'uploadFiles' && (
                   <div className="flex items-center gap-2 text-red-500 text-sm bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">
                     <AlertCircle size={16} />
                     {genError}
                   </div>
                 )}
 
-                {/* Results */}
-                {questions.length > 0 && (
+                {/* Generate MCQs Results */}
+                {questions.length > 0 && inputSourceSubTab === 'uploadFiles' && (
                   <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
                     <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
                       <div className="flex items-center gap-3">
@@ -887,21 +1269,24 @@ export function QAWorkspacePage() {
                   </motion.div>
                 )}
 
-                {/* Empty state */}
-                {!isGenLoading && questions.length === 0 && !genError && (
+                {/* Plain Text Subtab */}
+                {inputSourceSubTab === 'plainText' && (
                   <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="flex flex-col items-center justify-center py-16 theme-text-muted"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`${cardClass} rounded-2xl border shadow-lg p-6 flex-1 flex flex-col`}
                   >
-                    <Lightbulb size={48} strokeWidth={1.5} className="mb-3" />
-                    <p className="text-lg font-medium theme-text-secondary">Generate Assessment Questions</p>
-                    <p className="text-sm mt-1 text-center max-w-md">
-                      {documents.length === 0
-                        ? 'Upload a document first to generate MCQs.'
-                        : selectedDocIds.length === 0
-                          ? 'Select a document to begin.'
-                          : 'Set the number of MCQs and click "Generate MCQs" to create assessment questions from your documents.'}
+                    <label className="block text-sm font-medium theme-text-secondary mb-2">
+                      Paste or type your content
+                    </label>
+                    <textarea
+                      value={plainText}
+                      onChange={(e) => setPlainText(e.target.value)}
+                      placeholder="Paste your syllabus content, notes, or any text here to generate MCQs..."
+                      className={`w-full flex-1 min-h-[400px] border rounded-2xl px-5 py-4 text-sm leading-relaxed focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none resize-none transition-colors ${inputClass}`}
+                    />
+                    <p className="text-xs theme-text-muted mt-3 text-right">
+                      {plainText.length > 0 ? `${plainText.length.toLocaleString()} characters` : 'No content yet'}
                     </p>
                   </motion.div>
                 )}
@@ -1104,9 +1489,145 @@ export function QAWorkspacePage() {
                 </div>
               </motion.div>
             )}
-          </div>
         </div>
       </div>
+      {/* History List Modal */}
+      <AnimatePresence>
+        {showHistory && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            onClick={() => setShowHistory(false)}
+          >
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+              className={`relative w-full max-w-2xl max-h-[80vh] flex flex-col rounded-2xl border shadow-2xl ${
+                theme === 'dark' ? 'bg-[#0d1410] border-green-900/30' : 'bg-white border-gray-200'
+              }`}
+            >
+              {/* Header */}
+              <div className={`flex items-center justify-between px-6 py-4 border-b ${
+                theme === 'dark' ? 'border-green-900/20' : 'border-gray-200'
+              }`}>
+                <div className="flex items-center gap-3">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                    theme === 'dark' ? 'bg-amber-500/10' : 'bg-amber-50'
+                  }`}>
+                    <History size={18} className="text-amber-500" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold theme-text-heading">Generation History</h2>
+                    <p className="text-xs theme-text-muted">{historyEntries.length} generation{historyEntries.length !== 1 ? 's' : ''}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowHistory(false)}
+                  className="w-8 h-8 rounded-lg flex items-center justify-center theme-text-muted hover:theme-text-secondary theme-hover transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto p-5">
+                {historyEntries.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 theme-text-muted">
+                    <History size={40} strokeWidth={1.5} className="mb-3 opacity-40" />
+                    <p className="text-sm font-medium theme-text-secondary">No history yet</p>
+                    <p className="text-xs mt-1">Generated MCQs will appear here.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {historyEntries.map((entry) => (
+                      <div
+                        key={entry.id}
+                        className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors ${
+                          theme === 'dark'
+                            ? 'bg-[#0a0f0a] border-green-900/20 hover:border-amber-500/30'
+                            : 'bg-gray-50 border-gray-200 hover:border-amber-300'
+                        }`}
+                      >
+                        <div className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${
+                          theme === 'dark' ? 'bg-amber-500/10' : 'bg-amber-50'
+                        }`}>
+                          <FileText size={18} className="text-amber-500" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium theme-text-heading truncate">{entry.documentName}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-xs text-green-500 font-medium">{entry.questionCount} MCQs</span>
+                            <span className="text-xs theme-text-muted">·</span>
+                            <span className="text-xs theme-text-muted">
+                              {new Date(entry.createdAt).toLocaleDateString('en-IN', {
+                                day: '2-digit', month: 'short', year: 'numeric',
+                              })}
+                              {' '}
+                              {new Date(entry.createdAt).toLocaleTimeString('en-IN', {
+                                hour: '2-digit', minute: '2-digit',
+                              })}
+                            </span>
+                            {entry.hasNos && (
+                              <>
+                                <span className="text-xs theme-text-muted">·</span>
+                                <span className="text-[10px] font-bold text-green-500 bg-green-500/10 px-1.5 py-0.5 rounded">NOS</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <motion.button
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={() => { setShowHistory(false); setViewHistoryEntry(entry); }}
+                            className="p-1.5 rounded-lg text-green-500 hover:bg-green-500/10 transition-colors"
+                            title="View MCQs"
+                          >
+                            <Eye size={14} />
+                          </motion.button>
+                          <motion.button
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={() => downloadCSV(entry)}
+                            className="p-1.5 rounded-lg text-blue-500 hover:bg-blue-500/10 transition-colors"
+                            title="Download CSV"
+                          >
+                            <Download size={14} />
+                          </motion.button>
+                          <motion.button
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={() => {
+                              historyService.delete(entry.id);
+                              refreshHistory();
+                            }}
+                            className="p-1.5 rounded-lg text-red-500 hover:bg-red-500/10 transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 size={14} />
+                          </motion.button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* History View Modal */}
+      <AnimatePresence>
+        {viewHistoryEntry && (
+          <HistoryViewModal entry={viewHistoryEntry} onClose={() => setViewHistoryEntry(null)} />
+        )}
+      </AnimatePresence>
     </PageWrapper>
   );
 }
